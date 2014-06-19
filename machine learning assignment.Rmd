@@ -1,0 +1,172 @@
+Assignment - Practical Machine Learning
+========================================================
+
+Objective
+---------
+
+The objective of the assignment is to predict the activity done by a participant by observing the sensor data from the devices attached to the particpants body.
+
+Each participant is asked to do Bicep curl.
+
+Outcome of the activity can be classified into 5 categories:
+
+
+  - Exactly according to the specification (class A)
+  - Throwing the elbows to the front (class B)
+  - Lifting the dumbbell only half way (Class C)
+  - Lowering the dumbbell only half way (class D)
+  - Throwing the hips to the front (Class E)
+
+To recognize the participant's activity 4 sensor devices are attached to track the movements:
+
+  - Belt
+  - Glove
+  - Arm-Band
+  - Dumbbell
+  
+Each of the above mentioned sensors track the following measures
+
+  - Euler angles (roll,picth,yaw)
+  - Raw Accelerometer score
+  - Accelerometer readings (x, y, z axis)
+  - Gyroscope readings (x , y, z axis)
+  - Magnetometer readings (x, y, z axis)
+
+Total measures tracked are 13 per device. (52 in total)
+
+
+We are given a training data with 19622 observations. The objective is to develop a model with this training data so that activity can be predicted for test data.
+
+Test data contains 20 observations. We have to predict the activity outcome using the model
+
+Soulution
+---------
+
+Variable Selection
+------------------
+
+First task is to read the data and eliminate unnecessary variables. It is identified in the problem statement that only 52 measurements are needed per observation.
+
+So training data is populated with  53 variables (52 measurements and 1 outcome) 
+
+
+```{r}
+
+library(caret)
+library(ggplot2)
+library(kernlab)
+library(gbm)
+setwd("C:/backup/backup/coursera/machine learning/assignment")
+dataset <- read.csv("pml-training req.csv")
+#Reading the data (csv file contains only 53 variables per observation,removed unnecessary variables)
+
+```
+
+Data Partition
+------------------
+
+Sub splitting 19622 records into 80% training and 20% testing data. Model will be built on training data and test data will be used to validate the mode. This gives us a fair idea about **out of sample error rate**
+
+
+```{r}
+inTrain <- createDataPartition(y = dataset$classe, p=0.8, list = FALSE)
+train <- dataset[inTrain,]
+test <- dataset[-inTrain,]
+```
+
+Pre Processing
+--------------
+
+  - Standardizing all the co variates so that mean = 0 and sd = 1
+  - Using principal component analysis to identify variables which explain 85% of variance. This will reduce noise. Model can be built easily with less variables
+  
+ 
+
+```{r}
+
+preObj <- preProcess (train[,-53],method = c("center","scale"))
+pretrain <- predict(preObj, train[,-53])
+#standardizing co variates
+
+preProc <- preProcess(pretrain[,-53],method = "pca", pcaComp = 52)
+trainPC <- predict(preProc,pretrain[,-53])
+#trainPC has 52 PCA varaibles which have co variance between them
+
+k <-diag(cov(trainPC))
+perc <- k/sum(k)
+names(perc[cumsum(perc)>0.85])[1]
+#Identifying how many PCA variables (15) are needed to explain 85% of variance 
+
+set.seed(1323)
+preProc <- preProcess(pretrain[,-53],method = "pca", pcaComp = 15)
+trainPC <- predict(preProc,pretrain[,-53])
+trainPC$classe <- train$classe
+#creating new training set with only 15 variables which explain 85% of variance
+
+```
+ 
+ 
+ Building the model
+-------------------
+
+  - Since this is a classification exercise, **random forests** method is used to train the model
+  - To eliminate bias and reduce variance in model, repeated cross validation is done.
+  - Since the training data set is very large, 2 fold CV is used repeated 5 times
+  
+
+
+```{r}
+set.seed(12121)
+fitControl <- trainControl(method = "repeatedcv",number = 2, repeats = 5)
+#doing 2 fold repeated cross validation (5 times)
+
+set.seed(23423)
+modelFit <- train(classe~.,method = "rf",data = trainPC,trControl = fitControl)
+#creating linear regression model on training PCA data
+
+modelFit
+```
+  
+Validating the accuracy
+-----------------------
+
+  - Test data set is used to validate the accuarcy of model
+  - The exact preprocessing transformations are done on test data
+  - Predict fucntion is used to predict the outcome using the model
+  
+
+```{r}
+
+pretest <- predict(preObj, test[,-53])
+testPC <- predict(preProc,pretest[,-53])
+testPC$classe <- test$classe
+#Doing the exact pre processing transformations that were done on training date
+
+pred<- predict(modelFit,testPC)
+#Predicting the outcome
+
+confusionMatrix(pred,testPC$classe)
+#To obtain accuracy of the model over test data
+```  
+
+The above confusion matrix gives that 95% CI for accuracy as (96% to 97%) . So we can estimate out of sample error rate to be around 3% - 4% . Since the accuracy > 95%, we don't need any futher enhancements of the model.
+
+  
+Predicting the Outcome
+-----------------------
+
+  - Using the model obtained above to predict the outcome of the 20 test observations
+  
+```{r}
+
+setwd("C:/backup/backup/coursera/machine learning/assignment")
+testdataset <- read.csv("pml-testing req.csv")
+#Reading the test data. csv file contains 53 attributes. Unnecessary attributes are removed
+pretest1 <- predict(preObj,testdataset[,-53])
+test1PC <- predict(preProc,pretest1[,-53])
+#pre processing of variables
+
+predict(modelFit,test1PC)
+#predicting the outcome
+
+```   
